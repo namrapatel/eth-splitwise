@@ -9,13 +9,74 @@ var GENESIS = '0x000000000000000000000000000000000000000000000000000000000000000
 
 // This is the ABI for your contract (get it from Remix, in the 'Compile' tab)
 // ============================================================
-var abi = []; // FIXME: fill this in with your contract's ABI //Be sure to only have one array, not two
-
+var abi = [
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "creditor",
+				"type": "address"
+			},
+			{
+				"internalType": "uint32",
+				"name": "amount",
+				"type": "uint32"
+			}
+		],
+		"name": "add_IOU",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "debtor",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "creditor",
+				"type": "address"
+			}
+		],
+		"name": "lookup",
+		"outputs": [
+			{
+				"internalType": "uint32",
+				"name": "ret",
+				"type": "uint32"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "debtor",
+				"type": "address"
+			}
+		],
+		"name": "viewTotalOwed",
+		"outputs": [
+			{
+				"internalType": "uint32",
+				"name": "ret",
+				"type": "uint32"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+];
 // ============================================================
 abiDecoder.addABI(abi);
 // call abiDecoder.decodeMethod to use this - see 'getAllFunctionCalls' for more
 
-var contractAddress = ''; // FIXME: fill this in with your contract's address/hash
+var contractAddress = '0x1b97E87C54D61AAf3d176a8aA757f8857F369E0c'; // FIXME: fill this in with your contract's address/hash
 var BlockchainSplitwise = new web3.eth.Contract(abi, contractAddress);
 
 // =============================================================================
@@ -35,7 +96,8 @@ async function getUsers() {
 
 // TODO: Get the total amount owed by the user specified by 'user'
 async function getTotalOwed(user) {
-
+	var result = parseInt(await BlockchainSplitwise.methods.viewTotalOwed(user).call({from: web3.eth.defaultAccount}));
+	return result;
 }
 
 // TODO: Get the last time this user has sent or received an IOU, in seconds since Jan. 1, 1970
@@ -49,6 +111,19 @@ async function getLastActive(user) {
 // The person you owe money is passed as 'creditor'
 // The amount you owe them is passed as 'amount'
 async function add_IOU(creditor, amount) {
+	var reciept = await BlockchainSplitwise.methods.add_IOU(creditor, amount).send({from: web3.eth.defaultAccount});
+}
+
+async function getNeighbors(node) {
+	var neighbors = new Set();
+	var receipt = await getAllFunctionCalls(contractAddress, 'add_IOU');
+	// receipt.forEach(val => {
+	// 	if (node.toLowerCase() === val['from']) {
+	// 		neighbors.push()
+	// 	}
+	// })
+	// console.log(web3.eth.defaultAccount);
+	console.log(receipt);
 
 }
 
@@ -80,6 +155,7 @@ async function getAllFunctionCalls(addressOfContract, functionName) {
 	  			var args = func_call.params.map(function (x) {return x.value});
 	  			function_calls.push({
 	  				from: txn.from.toLowerCase(),
+					input: txn.input,
 	  				args: args,
 						t: time.timestamp
 	  			})
@@ -91,6 +167,7 @@ async function getAllFunctionCalls(addressOfContract, functionName) {
 	return function_calls;
 }
 
+// We've provided a breadth-first search implementation for you, if that's useful
 // We've provided a breadth-first search implementation for you, if that's useful
 // It will find a path from start to end (or return null if none exists)
 // You just need to pass in a function ('getNeighbors') that takes a node (string) and returns its neighbors (as an array)
@@ -166,6 +243,11 @@ $("#addiou").click(function() {
 	})
 });
 
+$("#test").click(function() {
+	web3.eth.defaultAccount = $("#myaccount").val(); //sets the default account
+  	getNeighbors(web3.eth.defaultAccount);
+});
+
 // This is a log function, provided if you want to display things to the page instead of the JavaScript console
 // Pass in a discription of what you're printing, and then the object to print
 function log(description, obj) {
@@ -189,7 +271,6 @@ function check(name, condition) {
 		console.log(name + ": SUCCESS");
 		return 3;
 	} else {
-		console.log(name + ": FAILED");
 		return 0;
 	}
 }
