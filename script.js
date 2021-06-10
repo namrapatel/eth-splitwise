@@ -76,7 +76,7 @@ var abi = [
 abiDecoder.addABI(abi);
 // call abiDecoder.decodeMethod to use this - see 'getAllFunctionCalls' for more
 
-var contractAddress = '0x1b97E87C54D61AAf3d176a8aA757f8857F369E0c'; // FIXME: fill this in with your contract's address/hash
+var contractAddress = '0x0A6da17d8eb2aEbC6fed18f35c1E1A48951AB488'; // FIXME: fill this in with your contract's address/hash
 var BlockchainSplitwise = new web3.eth.Contract(abi, contractAddress);
 
 // =============================================================================
@@ -91,7 +91,16 @@ var BlockchainSplitwise = new web3.eth.Contract(abi, contractAddress);
 // OR
 //   - a list of everyone currently owing or being owed money
 async function getUsers() {
-
+	var users = new Set();
+	var reciept = await getAllFunctionCalls(contractAddress, "add_IOU");
+	reciept.forEach(val => {
+		if (!users.has(val['from'])) {
+			users.add(val['from'])
+		} else if (!users.has(val['args']['0'])) {
+			users.add(val['args']['0']);
+		}
+	});
+	return Array.from(users);
 }
 
 // TODO: Get the total amount owed by the user specified by 'user'
@@ -104,27 +113,36 @@ async function getTotalOwed(user) {
 // Return null if you can't find any activity for the user.
 // HINT: Try looking at the way 'getAllFunctionCalls' is written. You can modify it if you'd like.
 async function getLastActive(user) {
-
+	var lastActive = null;
+	var receipt = await getAllFunctionCalls(contractAddress, "add_IOU");
+	receipt.forEach(val => {
+		if (user.toLowerCase() === val['from'] || user.toLowerCase() === val['args']['0']) {
+			if (val['t'] > lastActive) {
+				lastActive = val['t'];
+			}
+		} 
+	});
+	return lastActive;
 }
 
 // TODO: add an IOU ('I owe you') to the system
 // The person you owe money is passed as 'creditor'
 // The amount you owe them is passed as 'amount'
 async function add_IOU(creditor, amount) {
-	var reciept = await BlockchainSplitwise.methods.add_IOU(creditor, amount).send({from: web3.eth.defaultAccount});
+	var receipt = await BlockchainSplitwise.methods.add_IOU(creditor, amount).send({from: web3.eth.defaultAccount});
 }
 
 async function getNeighbors(node) {
 	var neighbors = new Set();
-	var receipt = await getAllFunctionCalls(contractAddress, 'add_IOU');
-	// receipt.forEach(val => {
-	// 	if (node.toLowerCase() === val['from']) {
-	// 		neighbors.push()
-	// 	}
-	// })
-	// console.log(web3.eth.defaultAccount);
-	console.log(receipt);
-
+	var receipt = await getAllFunctionCalls(contractAddress, "add_IOU");
+	receipt.forEach(val => {
+		if (node.toLowerCase() === val['from']) {
+			var creditor = val["args"]["0"];
+			neighbors.add(creditor);
+		}
+	})
+	
+	return Array.from(neighbors);
 }
 
 // =============================================================================
