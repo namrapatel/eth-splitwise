@@ -23,7 +23,7 @@ contract Splitwise {
         require(checkCycle(cycle,_min),"either cycle addresse is or min value is wrong");
         for (uint i = 0; i < cycle.length-1; i++) {
             IOU[cycle[i]][cycle[i+1]] -= _min;
-            totalOwed[cycle[i]] -= _min;
+            totalAmountOwed[cycle[i]] -= _min;
         }    
         return true;
     }
