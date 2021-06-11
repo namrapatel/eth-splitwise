@@ -55,6 +55,30 @@ var abi = [
 	{
 		"inputs": [
 			{
+				"internalType": "address[]",
+				"name": "cycle",
+				"type": "address[]"
+			},
+			{
+				"internalType": "uint32",
+				"name": "_min",
+				"type": "uint32"
+			}
+		],
+		"name": "resolveCycle",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "ret",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
 				"internalType": "address",
 				"name": "debtor",
 				"type": "address"
@@ -76,7 +100,7 @@ var abi = [
 abiDecoder.addABI(abi);
 // call abiDecoder.decodeMethod to use this - see 'getAllFunctionCalls' for more
 
-var contractAddress = '0x0A6da17d8eb2aEbC6fed18f35c1E1A48951AB488'; // FIXME: fill this in with your contract's address/hash
+var contractAddress = '0x5818db6C6808b5455767530073c9171AA7d94051'; // FIXME: fill this in with your contract's address/hash
 var BlockchainSplitwise = new web3.eth.Contract(abi, contractAddress);
 
 // =============================================================================
@@ -91,20 +115,22 @@ var BlockchainSplitwise = new web3.eth.Contract(abi, contractAddress);
 // OR
 //   - a list of everyone currently owing or being owed money
 async function getUsers() {
-	var users = new Set();
-	var reciept = await getAllFunctionCalls(contractAddress, "add_IOU");
-	reciept.forEach(val => {
-		if (!users.has(val['from'])) {
-			users.add(val['from'])
-		} else if (!users.has(val['args']['0'])) {
-			users.add(val['args']['0']);
-		}
+	let users = new Set();
+	var receipt = await getAllFunctionCalls(contractAddress,"add_IOU");
+	receipt.forEach(val => {
+		var debtor = val["from"];
+		var creditor = "0x"+val["input"].substr(34,40);
+ 		users.add(debtor);						
+ 		users.add(creditor);     
+ 		
 	});
+
 	return Array.from(users);
 }
 
 // TODO: Get the total amount owed by the user specified by 'user'
 async function getTotalOwed(user) {
+
 	var result = parseInt(await BlockchainSplitwise.methods.viewTotalOwed(user).call({from: web3.eth.defaultAccount}));
 	return result;
 }
@@ -113,36 +139,63 @@ async function getTotalOwed(user) {
 // Return null if you can't find any activity for the user.
 // HINT: Try looking at the way 'getAllFunctionCalls' is written. You can modify it if you'd like.
 async function getLastActive(user) {
-	var lastActive = null;
-	var receipt = await getAllFunctionCalls(contractAddress, "add_IOU");
+	var lastTime = null;
+	var receipt = await getAllFunctionCalls(contractAddress,"add_IOU");
 	receipt.forEach(val => {
-		if (user.toLowerCase() === val['from'] || user.toLowerCase() === val['args']['0']) {
-			if (val['t'] > lastActive) {
-				lastActive = val['t'];
-			}
-		} 
+		var debtor = val["from"];
+		var creditor = "0x"+val["input"].substr(34,40);
+ 		if(debtor == user.toLowerCase() || creditor == user.toLowerCase()){
+ 			if(val["t"] > lastTime){
+ 				lastTime = val["t"];
+ 			}
+ 		}
 	});
-	return lastActive;
+	return lastTime;
+}
+
+// Look at the IOU amount from the debtor and creditor
+async function lookup(debtor, creditor) {
+
+	var result = parseInt(await BlockchainSplitwise.methods.lookup(debtor,creditor).call({from: web3.eth.defaultAccount}));
+	return result;
+}
+
+// getNeighbors takes a node (string) and returns its neighbors (as an array)
+async function getNeighbors(node){
+
+	let neighbors = new Set();
+	var receipt = await getAllFunctionCalls(contractAddress,"add_IOU");
+	receipt.forEach(val => {
+		if(val["from"] == node.toLowerCase()){     
+			var creditor = "0x"+val["input"].substr(34,40);
+			neighbors.add(creditor);     	
+		}
+	});
+
+	return Array.from(neighbors);
+
 }
 
 // TODO: add an IOU ('I owe you') to the system
 // The person you owe money is passed as 'creditor'
 // The amount you owe them is passed as 'amount'
 async function add_IOU(creditor, amount) {
-	var receipt = await BlockchainSplitwise.methods.add_IOU(creditor, amount).send({from: web3.eth.defaultAccount});
-}
 
-async function getNeighbors(node) {
-	var neighbors = new Set();
-	var receipt = await getAllFunctionCalls(contractAddress, "add_IOU");
-	receipt.forEach(val => {
-		if (node.toLowerCase() === val['from']) {
-			var creditor = val["args"]["0"];
-			neighbors.add(creditor);
+
+	var receipt = await BlockchainSplitwise.methods.add_IOU(creditor, amount).send({from: web3.eth.defaultAccount});
+
+	var path = await doBFS(creditor,web3.eth.defaultAccount);  	//check if there is a path from creditor to debtor
+	if(path != null){											//find a cycle
+		path.push(creditor);        							//add the begining node
+		var IOUs = [];
+		for (let i = 0; i < path.length-1; i++) {				//loop through the IOU cycle
+	 		 IOUs[i] = await lookup(path[i],path[i+1]);		
 		}
-	})
-	
-	return Array.from(neighbors);
+		var min = Math.min.apply(null, IOUs)
+		if(min != 0){
+			await BlockchainSplitwise.methods.resolveCycle(path, min).send({from: web3.eth.defaultAccount});	
+		}
+	}
 }
 
 // =============================================================================
@@ -171,9 +224,10 @@ async function getAllFunctionCalls(addressOfContract, functionName) {
 				if (func_call && func_call.name === functionName) {
 					var time = await web3.eth.getBlock(curBlock);
 	  			var args = func_call.params.map(function (x) {return x.value});
+	  			
 	  			function_calls.push({
 	  				from: txn.from.toLowerCase(),
-					input: txn.input,
+	  				input: txn.input,
 	  				args: args,
 						t: time.timestamp
 	  			})
@@ -186,15 +240,14 @@ async function getAllFunctionCalls(addressOfContract, functionName) {
 }
 
 // We've provided a breadth-first search implementation for you, if that's useful
-// We've provided a breadth-first search implementation for you, if that's useful
 // It will find a path from start to end (or return null if none exists)
 // You just need to pass in a function ('getNeighbors') that takes a node (string) and returns its neighbors (as an array)
-async function doBFS(start, end, getNeighbors) {
+async function doBFS(start, end) {
 	var queue = [[start]];
 	while (queue.length > 0) {
 		var cur = queue.shift();
 		var lastNode = cur[cur.length-1]
-		if (lastNode === end) {
+		if (lastNode.toLowerCase() === end.toLowerCase()) {
 			return cur;
 		} else {
 			var neighbors = await getNeighbors(lastNode);
@@ -205,6 +258,7 @@ async function doBFS(start, end, getNeighbors) {
 	}
 	return null;
 }
+
 
 // =============================================================================
 //                                      UI
@@ -263,7 +317,6 @@ $("#addiou").click(function() {
 
 $("#test").click(function() {
 	web3.eth.defaultAccount = $("#myaccount").val(); //sets the default account
-  	getNeighbors(web3.eth.defaultAccount);
 });
 
 // This is a log function, provided if you want to display things to the page instead of the JavaScript console
